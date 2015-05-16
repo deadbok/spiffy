@@ -114,7 +114,7 @@ static s32_t my_spiffs_erase(u32_t addr, u32_t size) {
 void my_spiffs_mount() {
   spiffs_config cfg;
 
-  cfg.phys_size = MAX_SIZE; // use all spi flash
+  cfg.phys_size = rom_size; // use all spi flash
   cfg.phys_addr = 0; // start spiffs at start of spi flash
 
   cfg.phys_erase_block = SPI_FLASH_SEC_SIZE;
@@ -234,7 +234,7 @@ void print_help(char *name) {
 int main(int argc, char **args) {
 
     DIR *dir;
-    int i;
+    unsigned long i;
     
     if (argc == 4) {
         file_dir = args[1];
@@ -266,7 +266,7 @@ int main(int argc, char **args) {
         exit(EXIT_FAILURE);
     }
     //Set the whole data as erased.
-    for(i=0; i < MAX_SIZE; i++) {
+    for(i=0; i < rom_size; i++) {
         fputc(ROMERASE,rom);
     }
     fflush(rom);
