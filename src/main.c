@@ -1,6 +1,11 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+//spiffs.h needs to be before errno.h to not cause trouble.
 #include "spiffs.h"
+#include <errno.h>
 
 #define SPI_FLASH_SEC_SIZE 4096
 #define LOG_PAGE_SIZE       256
@@ -8,6 +13,7 @@
 //16k
 #define MAX_SIZE 4*4*1024
 
+//Default image source dir
 #define FILEDIR "files"
 #define ROMNAME "spiff_rom.bin"
 #define ROMERASE 0xFF
@@ -16,11 +22,16 @@ static spiffs fs;
 static u8_t spiffs_work_buf[LOG_PAGE_SIZE*2];
 static u8_t spiffs_fds[32*4];
 static u8_t spiffs_cache_buf[(LOG_PAGE_SIZE+32)*4];
+//ROM image file handle.
+static FILE *rom;
+//ROM image file name.
+static char *rom_filename;
+//Directory to create the image from.
+static char *file_dir;
+//Size of the ROM image.
+static int  rom_size;
 
 #define S_DBG
-
-FILE *rom;
-
 
 void hexdump_mem(u8_t *b, u32_t len) {
     while (len--) {
@@ -31,7 +42,6 @@ void hexdump_mem(u8_t *b, u32_t len) {
     }
     S_DBG("\n");
 }
-
 
 static s32_t my_spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
 
@@ -101,8 +111,6 @@ static s32_t my_spiffs_erase(u32_t addr, u32_t size) {
     return SPIFFS_OK;
 }
 
-
-
 void my_spiffs_mount() {
   spiffs_config cfg;
 
@@ -127,7 +135,6 @@ void my_spiffs_mount() {
           0);
   S_DBG("mount res: %i\n", res);
 }
-
 
 int write_to_spiffs(char *fname, u8_t *data,int size) {
 
@@ -164,74 +171,100 @@ void add_file(char* fname) {
 
     int sz;
     u8_t *buf;
-    char *path = malloc(1024);
-
-
-    sprintf(path,"%s/%s", FILEDIR,fname);
-
-
+    char path[1024];
+    struct stat file_stat;
+    
+    sprintf(path,"%s/%s", file_dir, fname);
+    
+    errno = 0;
+    
     FILE *fp = fopen(path,"r");
-
     if (fp == NULL){
         S_DBG("Skipping %s",path);
         return;
     }
-
-    fseek(fp, 0L, SEEK_END);
-    sz = ftell(fp);
-    fseek(fp, 0L, SEEK_SET);
-
-    if (sz == -1) {
-        //directory
+    
+    if (stat(path, &file_stat) < 0) {
+        printf("Could not stat %s.\n", path);
+        fclose(fp);
         return;
     }
+        
+    if (S_ISREG(file_stat.st_mode)) {
+        fseek(fp, 0L, SEEK_END);
+        sz = ftell(fp);
+        fseek(fp, 0L, SEEK_SET);
 
-    buf = malloc(sz);
+        if (sz == -1) {
+            //directory
+            return;
+        }
 
-    if(fread(buf,sz,1,fp) != 1) {
-        printf("Unable to read file %s\n",fname);
-        return;
+        buf = malloc(sz);
+
+        if(fread(buf,sz,1,fp) != 1) {
+            printf("Unable to read file %s\n", path);
+            printf(" Error: %s\n", strerror(errno));
+            return;
+        }
+
+        S_DBG("%d bytes read from %s\n",sz,fname);
+
+        write_to_spiffs(fname, buf,sz);
+
+        printf("%s added to spiffs (%d bytes).\n",fname,sz);
+
+        free(buf);
     }
-
-    S_DBG("%d bytes read from %s\n",sz,fname);
-
-    write_to_spiffs(fname, buf,sz);
-
-    printf("%s added to spiffs (%d bytes)\n",fname,sz);
-
-    free(buf);
+    else
+    {
+        printf("Skipping directory %s.\n", fname);
+    }
     fclose(fp);
-
 }
 
+void print_help(char *name) {
+    printf("\nUsage:\n");
+    printf("  %s dir file size\n\n", name);
+    printf("    'dir' is the directory to create the file system from.\n");
+    printf("    'file' is the name of the file system image to create.\n");
+    printf("    'size' is the size (in bytes) of the final image.\n\n");
+}    
 
 int main(int argc, char **args) {
 
-    FILE *rom;
     DIR *dir;
     int i;
-    char *rom_filename;
-    char *file_dir;
     
-    if (argc == 3) {
+    if (argc == 4) {
         file_dir = args[1];
         rom_filename = args[2];
+        if (sscanf (args[3], "%d", &rom_size)!=1) { 
+            printf("Could not parse command line.\n");
+            print_help(args[0]);
+            exit(EXIT_FAILURE);
+        }
     }
-    else if (argc == 0) {
+    else if (argc == 1) {
         printf("No files of filename supplied, using defaults.\n");
         rom_filename = ROMNAME;
         file_dir = FILEDIR;
+        rom_size = MAX_SIZE;
     }
     else {
-        printf("Could not psrse command line.\n");
-        printf("\nUsage:\n");
-        printf("  %s dir file\n\n", args[0]);
-        printf("    'dir' is the directory to create the file sysytem from.\n");
-        printf("    'file' is the name of the file system image to create.\n\n");
+        printf("Could not parse command line.\n");
+        print_help(args[0]);
         exit(EXIT_FAILURE);
     }
     
+    printf("Creating rom %s of size %d bytes\n", rom_filename, rom_size);
+    printf("Adding files in directory %s\n", file_dir);
+    
     rom = fopen(rom_filename,"w+");
+    if (rom == NULL) {
+        printf("Could not open output file.\n");
+        exit(EXIT_FAILURE);
+    }
     //Set the whole data as erased.
     for(i=0; i < MAX_SIZE; i++) {
         fputc(ROMERASE,rom);
@@ -239,16 +272,14 @@ int main(int argc, char **args) {
     fflush(rom);
 
     my_spiffs_mount();
-    printf("Creating rom %s of size %d bytes\n", rom_filename, MAX_SIZE);
-    printf("Adding files in directory %s\n", file_dir);
 
     struct dirent *ent;
-    if ((dir = opendir (file_dir)) != NULL) {
+    if ((dir = opendir(file_dir)) != NULL) {
         /* print all the files and directories within directory */
-        while ((ent = readdir (dir)) != NULL) {
+        while ((ent = readdir(dir)) != NULL) {
             add_file(ent->d_name);
         }
-        closedir (dir);
+        closedir(dir);
     } else {
         /* could not open directory */
         printf("Unable to open directory %s\n", file_dir);
