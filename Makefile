@@ -1,81 +1,44 @@
-BINARY = spiffy
+#Basic configuration.
 
-############
-#
-# Paths
-#
-############
+#Final target name.
+TARGET := spiffy
+#Directory where the Makefile was run.
+CURRENT_DIR := $(shell pwd)
 
-home = $(shell pwd)
-sourcedir = $(home)/src
-builddir = $(home)/build
+#Directories.
+SRC_DIR = $(CURRENT_DIR)/src
+BUILD_DIR = $(CURRENT_DIR)/build
 
+#Commands.
+CC := gcc
+LD := ld
+MKDIR := mkdir -p
 
-#############
-#
-# Build tools
-#
-#############
+#Files
+SRC := $(foreach sdir,$(SRC_DIR),$(wildcard $(sdir)/*.c))
+OBJ	:= $(patsubst %.c,$(BUILD_DIR)/%.o,$(notdir $(SRC)))
 
-CC = gcc $(COMPILEROPTIONS)
-LD = ld
-GDB = gdb
-OBJCOPY = objcopy
-OBJDUMP = objdump
-MKDIR = mkdir -p
+#Build rules.
 
-###############
-#
-# Files and libs
-#
-###############
+vpath %.c $(SRC_DIR)
+vpath %.h $(SRC_DIR)
 
-FLAGS	+= -DCONFIG_BUILD_SPIFFS
-CFILES = main.c
-CFILES	+= spiffs_nucleus.c
-CFILES	+= spiffs_gc.c
-CFILES	+= spiffs_hydrogen.c
-CFILES	+= spiffs_cache.c
-CFILES	+= spiffs_check.c
-
-INCLUDE_DIRECTIVES = -I./${sourcedir}
-COMPILEROPTIONS = $(INCLUDE_DIRECTIVES) 
-		
-############
-#
-# Tasks
-#
-############
-
-vpath %.c ${sourcedir} ${sourcedir}/default ${sourcedir}/test
-
-OBJFILES = $(CFILES:%.c=${builddir}/%.o)
-
-DEPFILES = $(CFILES:%.c=${builddir}/%.d)
-
-ALLOBJFILES += $(OBJFILES)
-
-DEPENDENCIES = $(DEPFILES) 
+all: $(TARGET) 
 
 # link object files, create binary
-$(BINARY): $(ALLOBJFILES)
-	@echo "... linking"
-	${CC} $(LINKEROPTIONS) -o ${builddir}/$(BINARY) $(ALLOBJFILES) $(LIBS)	   	
+$(TARGET): $(BUILD_DIR) $(OBJ)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LIBS)	   	
 
 # compile c files
-$(OBJFILES) : ${builddir}/%.o:%.c Makefile
-		@echo "... compile $@"
-		${CC} -MD -g -c -o $@ $<
+$(BUILD_DIR)/%.o: %.c
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -MD -g -O0 -c -o $@ $<
 
-all: ${builddir} $(BINARY) 
-
-${builddir}:
+${BUILD_DIR}:
 	$(MKDIR) $@
 
 clean:
-	@echo ... removing build files in ${builddir}
-	rm -f ${builddir}/*
-
+	rm -f $(TARGET)
+	rm -fR $(BUILD_DIR)
 	
 #Include .d files with targets and dependencies.
--include $(patsubst %.c,${builddir}/%.d,$(CFILES))
+-include $(patsubst %.c,$(BUILD_DIR)/%.d,$(notdir $(SRC)))
