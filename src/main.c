@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <dirent.h>
-#include <spiffs.h>
+#include "spiffs.h"
 
 #define SPI_FLASH_SEC_SIZE 4096
 #define LOG_PAGE_SIZE       256
@@ -207,21 +207,43 @@ void add_file(char* fname) {
 
 int main(int argc, char **args) {
 
-    rom = fopen(ROMNAME,"w+");
+    FILE *rom;
+    DIR *dir;
     int i;
+    char *rom_filename;
+    char *file_dir;
+    
+    if (argc == 3) {
+        file_dir = args[1];
+        rom_filename = args[2];
+    }
+    else if (argc == 0) {
+        printf("No files of filename supplied, using defaults.\n");
+        rom_filename = ROMNAME;
+        file_dir = FILEDIR;
+    }
+    else {
+        printf("Could not psrse command line.\n");
+        printf("\nUsage:\n");
+        printf("  %s dir file\n\n", args[0]);
+        printf("    'dir' is the directory to create the file sysytem from.\n");
+        printf("    'file' is the name of the file system image to create.\n\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    rom = fopen(rom_filename,"w+");
+    //Set the whole data as erased.
     for(i=0; i < MAX_SIZE; i++) {
         fputc(ROMERASE,rom);
     }
     fflush(rom);
 
     my_spiffs_mount();
-    printf("Creating rom %s of size %d bytes\n", ROMNAME, MAX_SIZE);
+    printf("Creating rom %s of size %d bytes\n", rom_filename, MAX_SIZE);
+    printf("Adding files in directory %s\n", file_dir);
 
-
-    printf("Adding files in directory %s\n", FILEDIR);
-    DIR *dir;
     struct dirent *ent;
-    if ((dir = opendir (FILEDIR)) != NULL) {
+    if ((dir = opendir (file_dir)) != NULL) {
         /* print all the files and directories within directory */
         while ((ent = readdir (dir)) != NULL) {
             add_file(ent->d_name);
@@ -229,12 +251,9 @@ int main(int argc, char **args) {
         closedir (dir);
     } else {
         /* could not open directory */
-        printf("Unable to open directory %s\n", FILEDIR);
+        printf("Unable to open directory %s\n", file_dir);
         return EXIT_FAILURE;
     }
-
-
-
     fclose(rom);
     exit(EXIT_SUCCESS);
 }
