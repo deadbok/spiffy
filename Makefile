@@ -1,5 +1,3 @@
-#Basic configuration.
-
 #Final target name.
 TARGET := spiffy
 #Directory where the Makefile was run.
@@ -18,8 +16,12 @@ MKDIR := mkdir -p
 SRC := $(foreach sdir,$(SRC_DIR),$(wildcard $(sdir)/*.c))
 OBJ	:= $(patsubst %.c,$(BUILD_DIR)/%.o,$(notdir $(SRC)))
 
-#Build rules.
+ifeq ($(DEBUG), 1)
+CFLAGS += -g -O0 -DDEBUG
+endif
 
+#Build rules.
+#############
 vpath %.c $(SRC_DIR)
 vpath %.h $(SRC_DIR)
 
@@ -31,7 +33,7 @@ $(TARGET): $(BUILD_DIR) $(OBJ)
 
 # compile c files
 $(BUILD_DIR)/%.o: %.c
-	$(CC) $(CFLAGS) -I$(SRC_DIR) -MD -g -O0 -c -o $@ $<
+	$(CC) $(CFLAGS) -I$(SRC_DIR) -MD -c -o $@ $<
 
 ${BUILD_DIR}:
 	$(MKDIR) $@
